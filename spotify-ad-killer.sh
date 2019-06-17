@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #	Spotify is an amazing music streaming service and worth the premium 
-#	subscription. This script was created out of my curiosity and it is 
+#	subscription. This script was created out of my curiousity and it is 
 #	intended to be used for testing purposes only! I do not take responsibility 
 #	for any future action taken on your account by Spotify due to abusive 
 #	use of this script.
@@ -10,15 +10,15 @@
 wait_for_spotify()
 {
 	# $1=1 wait for spotify to start
-	# $1=0 wait for spotify to close
+	# $2=0 wait for spotify to close
 
-	(pgrep -x spotify >/dev/null)
+	(pgrep spotify > /dev/null)
 	running_code=$?
 
 	while [[ $(($running_code ^ $1)) == 0 ]]
 	do
 		sleep ${2:-1}	# sleep for $2 seconds; default: 1s
-		(pgrep -x spotify >/dev/null)
+		(pgrep spotify > /dev/null)
 		running_code=$?
 
 		echo -n .
@@ -27,26 +27,36 @@ wait_for_spotify()
 
 play()
 {
-	dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify \
-	/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play  > /dev/null
+	until ( dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify \
+	/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play  > /dev/null 2>&1 )
+	do
+		sleep 0.2
+	done
 }
 
 restart_spotify()
 {
-	echo "closing spotify"
-	killall spotify
 
-	wait_for_spotify 0 1 	# close
+	start_time="$(date -u +%s.%N)"
+
+	echo "closing spotify"
+	(killall spotify)
+	wait_for_spotify 0 $1 	# close
 	
+	end_time="$(date -u +%s.%N)"
+	elapsed="$(bc <<<"$end_time-$start_time")"
+	echo "closing time: "$elapsed Secs
+
+	start_time="$(date -u +%s.%N)"
 	echo "Starting spotify"
 	(spotify &>/dev/null &)
 
-	wait_for_spotify 1 1 	# start
+	wait_for_spotify 1 $1	# start
+	play
 
-	until play
-	do
-		sleep 1
-	done
+	end_time="$(date -u +%s.%N)"
+	elapsed="$(bc <<<"$end_time-$start_time")"
+	echo "sarting time: "$elapsed Secs
 }
 
 
@@ -62,12 +72,21 @@ do
 		string:'Metadata' 2>&1 )
 	do
 		sleep 20
+		echo -n .
 	done
 	
 	if (echo $dbus_msg | grep -q "spotify:ad" )
 	then
 		# ad detected; skip ad
-		restart_spotify
+		echo "Ad detected! restarting..."
+		start_t="$(date -u +%s.%N)"
+
+		restart_spotify 0.5		# delay secs
+
+		end_t="$(date -u +%s.%N)"
+		elapsed="$(bc <<<"$end_t-$start_t")"
+		echo "Spotify restarted: " $elapsed Secs
+
 	fi
 
 	sleep 2
